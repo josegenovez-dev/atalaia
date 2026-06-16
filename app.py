@@ -6,9 +6,9 @@ app = Flask(__name__)
 def home():
     return "🛡️ Atalaia Online"
 
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
+
     data = request.get_json(silent=True) or {}
 
     print("Evento recebido:", data)
@@ -18,6 +18,17 @@ def webhook():
 
         if challenge:
             return challenge, 200
+
+    if data.get("event_type") == "message_from_bot_subscriber":
+
+        texto = (
+            data.get("event", {})
+            .get("message", {})
+            .get("text", {})
+            .get("content", "")
+        )
+
+        print(f"Mensagem recebida: {texto}")
 
     return "ok", 200
 
