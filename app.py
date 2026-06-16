@@ -6,24 +6,21 @@ app = Flask(__name__)
 def home():
     return "🛡️ Atalaia Online"
 
-
-@app.route("/webhook", methods=["GET", "POST"])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    challenge = request.args.get("seatalk_challenge")
 
-    if not challenge and request.form:
-        challenge = request.form.get("seatalk_challenge")
+    data = request.get_json(silent=True) or {}
 
-    if not challenge:
-        data = request.get_json(silent=True) or {}
-        challenge = data.get("seatalk_challenge")
+    print("Evento recebido:", data)
 
-    if challenge:
-        return challenge, 200, {"Content-Type": "text/plain"}
+    if (
+        data.get("event_type") == "event_verification"
+        and "event" in data
+        and "seatalk_challenge" in data["event"]
+    ):
+        return data["event"]["seatalk_challenge"]
 
-    print("Evento recebido:", request.get_json(silent=True))
     return "ok", 200
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
