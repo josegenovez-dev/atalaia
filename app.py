@@ -9,18 +9,29 @@ def home():
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
+
+    print("======== NOVA REQUISICAO ========")
+    print("Metodo:", request.method)
+    print("Args:", request.args)
+    print("Headers:", dict(request.headers))
+
+    try:
+        print("JSON:", request.get_json(silent=True))
+    except:
+        pass
+
     challenge = request.args.get("seatalk_challenge")
 
     if challenge:
         return challenge
 
-    data = request.get_json(silent=True)
+    if request.is_json:
+        data = request.get_json(silent=True)
 
-    if data:
-        print("Evento recebido:")
-        print(data)
+        if data and "seatalk_challenge" in data:
+            return str(data["seatalk_challenge"])
 
-    return jsonify({"status": "ok"})
+    return "ok", 200
 
 
 if __name__ == "__main__":
