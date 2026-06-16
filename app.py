@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request
 
 app = Flask(__name__)
 
@@ -9,28 +9,19 @@ def home():
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-
-    print("======== NOVA REQUISICAO ========")
-    print("Metodo:", request.method)
-    print("Args:", request.args)
-    print("Headers:", dict(request.headers))
-
-    try:
-        print("JSON:", request.get_json(silent=True))
-    except:
-        pass
-
     challenge = request.args.get("seatalk_challenge")
 
+    if not challenge and request.form:
+        challenge = request.form.get("seatalk_challenge")
+
+    if not challenge:
+        data = request.get_json(silent=True) or {}
+        challenge = data.get("seatalk_challenge")
+
     if challenge:
-        return challenge
+        return challenge, 200, {"Content-Type": "text/plain"}
 
-    if request.is_json:
-        data = request.get_json(silent=True)
-
-        if data and "seatalk_challenge" in data:
-            return str(data["seatalk_challenge"])
-
+    print("Evento recebido:", request.get_json(silent=True))
     return "ok", 200
 
 
