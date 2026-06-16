@@ -24,10 +24,25 @@ def get_access_token():
     }
 
     response = requests.post(url, json=payload)
-    print("TOKEN RESPONSE:", response.status_code, response.text)
 
-    data = response.json()
-    return data.get("app_access_token")
+    print("TOKEN RESPONSE:", response.status_code)
+    print("TOKEN BODY:", response.text)
+
+    try:
+        data = response.json()
+    except Exception as e:
+        print("ERRO AO LER JSON DO TOKEN:", e)
+        return None
+
+    token = (
+        data.get("app_access_token")
+        or data.get("access_token")
+        or data.get("token")
+        or data.get("data", {}).get("app_access_token")
+        or data.get("data", {}).get("access_token")
+    )
+
+    return token
 
 
 def send_private_message(seatalk_id, text):
@@ -55,7 +70,9 @@ def send_private_message(seatalk_id, text):
     }
 
     response = requests.post(url, headers=headers, json=payload)
-    print("SEND RESPONSE:", response.status_code, response.text)
+
+    print("SEND RESPONSE:", response.status_code)
+    print("SEND BODY:", response.text)
 
 
 @app.route("/webhook", methods=["POST"])
@@ -66,6 +83,7 @@ def webhook():
 
     if data.get("event_type") == "event_verification":
         challenge = data.get("event", {}).get("seatalk_challenge")
+
         if challenge:
             return challenge, 200
 
