@@ -11,7 +11,7 @@ PLANILHAS = {
     "farol": {
         "id": "1LhUnFfCldo_KtKFKHSzNBOawJ3KOT0s-CKd8pRAyR2o",
         "abas": [
-            "Histórico de Entregas"
+            "Farol"
         ]
     }
 }
