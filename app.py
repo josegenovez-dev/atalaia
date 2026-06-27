@@ -11,6 +11,12 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 BASE_URL = "https://openapi.seatalk.io"
 
+print("=" * 50)
+print("APP_ID configurado:", bool(APP_ID))
+print("APP_SECRET configurado:", bool(APP_SECRET))
+print("GEMINI_API_KEY configurada:", bool(GEMINI_API_KEY))
+print("=" * 50)
+
 
 @app.route("/")
 def home():
@@ -20,10 +26,7 @@ def home():
 def get_access_token():
     response = requests.post(
         f"{BASE_URL}/auth/app_access_token",
-        json={
-            "app_id": APP_ID,
-            "app_secret": APP_SECRET
-        },
+        json={"app_id": APP_ID, "app_secret": APP_SECRET},
         timeout=20
     )
 
@@ -71,10 +74,14 @@ def send_private_message(employee_code, text):
 
 def gerar_resposta_ia(texto):
     try:
-        if not GEMINI_API_KEY:
+        api_key = os.getenv("GEMINI_API_KEY")
+
+        print("GEMINI_API_KEY configurada agora:", bool(api_key))
+
+        if not api_key:
             return "GEMINI_API_KEY não configurada no Render."
 
-        client = genai.Client(api_key=GEMINI_API_KEY)
+        client = genai.Client(api_key=api_key)
 
         prompt = f"""
 Você é o Atalaia, assistente interno de logística.
@@ -152,7 +159,9 @@ def processar_mensagem(texto):
         return comando_ajuda()
 
     if texto_lower == "/status":
-        return "Status: online.\nSeatalk: conectado.\nGemini IA: configurada se GEMINI_API_KEY estiver no Render."
+        return "Status: online.\nSeatalk: conectado.\nGemini IA: " + (
+            "configurada." if os.getenv("GEMINI_API_KEY") else "não configurada."
+        )
 
     if texto_lower.startswith("/lh"):
         return consultar_lh(texto)
