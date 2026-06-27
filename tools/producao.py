@@ -1,5 +1,5 @@
 from sheets_service import ler_primeira_aba
-from ai import perguntar_gemini
+from ai import perguntar_ia
 
 
 def consultar_producao_farol(pergunta):
@@ -10,14 +10,11 @@ def consultar_producao_farol(pergunta):
             return "A planilha Farol está vazia ou não retornou dados."
 
         contexto = f"""
-Dados recentes da planilha Farol:
-{linhas[:50]}
+Dados da planilha Farol:
+{linhas[:80]}
 """
 
-        return perguntar_gemini(
-            pergunta,
-            contexto
-        )
+        return perguntar_ia(pergunta, contexto)
 
     except Exception as e:
         print("ERRO PRODUÇÃO FAROL:", repr(e))
