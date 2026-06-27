@@ -28,7 +28,26 @@ def ler_aba(nome_planilha, nome_aba):
     sheet = gc.open_by_key(config["id"])
     worksheet = sheet.worksheet(nome_aba)
 
-    return worksheet.get_all_records()
+    valores = worksheet.get_all_values()
+
+    if not valores:
+        return []
+
+    linhas_formatadas = []
+
+    for i, linha in enumerate(valores[1:], start=2):
+        if not any(linha):
+            continue
+
+        registro = {
+            f"COLUNA_{idx + 1}": valor
+            for idx, valor in enumerate(linha)
+        }
+
+        registro["_linha"] = i
+        linhas_formatadas.append(registro)
+
+    return linhas_formatadas
 
 
 def ler_primeira_aba(nome_planilha):
@@ -46,14 +65,14 @@ def buscar_texto_em_tudo(texto):
             try:
                 linhas = ler_aba(nome_planilha, aba)
 
-                for numero_linha, linha in enumerate(linhas, start=2):
+                for linha in linhas:
                     conteudo = " ".join(str(v).lower() for v in linha.values())
 
                     if texto in conteudo:
                         resultados.append({
                             "planilha": nome_planilha,
                             "aba": aba,
-                            "linha": numero_linha,
+                            "linha": linha.get("_linha"),
                             "dados": linha
                         })
 
