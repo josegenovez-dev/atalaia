@@ -9,7 +9,7 @@ APP_ID = os.getenv("APP_ID")
 APP_SECRET = os.getenv("APP_SECRET")
 BASE_URL = "https://openapi.seatalk.io"
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI(api_key=os.getenv("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"))
 
 
 @app.route("/")
