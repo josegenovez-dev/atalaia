@@ -5,7 +5,10 @@ from config import APP_ID, APP_SECRET, BASE_URL
 def get_access_token():
     response = requests.post(
         f"{BASE_URL}/auth/app_access_token",
-        json={"app_id": APP_ID, "app_secret": APP_SECRET},
+        json={
+            "app_id": APP_ID,
+            "app_secret": APP_SECRET
+        },
         timeout=20
     )
 
@@ -28,7 +31,9 @@ def send_private_message(employee_code, text):
             "employee_code": str(employee_code),
             "message": {
                 "tag": "text",
-                "text": {"content": text[:3900]}
+                "text": {
+                    "content": text[:3900]
+                }
             }
         }
 
