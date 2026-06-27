@@ -1,3 +1,4 @@
+import json
 import re
 from ai import perguntar_gemini
 from tools.producao import consultar_producao_farol
@@ -6,67 +7,147 @@ from tools.relatorio import gerar_relatorio_farol
 
 
 def comando_ajuda():
-    return """Comandos disponíveis:
+    return """Pode perguntar normalmente, por exemplo:
 
+- Quanto a esteira produziu até agora?
+- Quanto produziu até 9h?
+- Como está o Farol?
+- Gere um relatório da operação
+- Consulte o pedido 123456
+
+Comandos ainda funcionam:
 /status
 /ajuda
 /relatorio
 /buscar CÓDIGO
-/farol
-
-Perguntas naturais:
-- Consultar planilha de Farol
-- Ver quanto a esteira produziu até agora
-- Gerar relatório da Farol
 """
 
 
 def extrair_codigo(texto):
-    # Só considera código se tiver número
     match = re.search(r"\b[A-Za-z0-9\-]*\d[A-Za-z0-9\-]{3,}\b", texto)
     return match.group(0) if match else None
 
 
+def classificar_intencao(texto):
+    prompt = f"""
+Você é o classificador de intenção do Atalaia, assistente operacional de logística.
+
+Analise a mensagem do usuário e responda APENAS em JSON válido.
+
+Tipos possíveis:
+- status
+- ajuda
+- relatorio_farol
+- producao_farol
+- busca_codigo
+- conversa
+
+Regras:
+- Se falar de produção, esteira, Farol, produtividade, capacidade, volumes, até agora, até 9h, até 10h: producao_farol.
+- Se pedir relatório, resumo operacional, visão geral da operação: relatorio_farol.
+- Se tiver código, pedido, LH, tracking ou número específico para consultar: busca_codigo.
+- Se perguntar se está online ou status: status.
+- Se pedir ajuda/menu: ajuda.
+- Caso contrário: conversa.
+
+Campos:
+{{
+  "tipo": "...",
+  "codigo": null ou "código extraído",
+  "horario": null ou "HH:MM",
+  "texto_original": "mensagem original"
+}}
+
+Mensagem:
+{texto}
+"""
+
+    try:
+        resposta = perguntar_gemini(prompt)
+
+        resposta = resposta.strip()
+        resposta = resposta.replace("```json", "").replace("```", "").strip()
+
+        return json.loads(resposta)
+
+    except Exception as e:
+        print("ERRO CLASSIFICADOR:", repr(e))
+
+        texto_lower = texto.lower()
+
+        if texto_lower in ["status", "online", "online?", "/status"]:
+            return {"tipo": "status", "codigo": None, "horario": None}
+
+        if texto_lower in ["ajuda", "/ajuda", "menu"]:
+            return {"tipo": "ajuda", "codigo": None, "horario": None}
+
+        if any(p in texto_lower for p in ["relatório", "relatorio", "resumo"]):
+            return {"tipo": "relatorio_farol", "codigo": None, "horario": None}
+
+        if any(p in texto_lower for p in ["farol", "esteira", "produção", "produziu", "produtividade", "capacidade", "volume"]):
+            horario = extrair_horario(texto)
+            return {"tipo": "producao_farol", "codigo": None, "horario": horario}
+
+        codigo = extrair_codigo(texto)
+        if codigo:
+            return {"tipo": "busca_codigo", "codigo": codigo, "horario": None}
+
+        return {"tipo": "conversa", "codigo": None, "horario": None}
+
+
+def extrair_horario(texto):
+    texto_lower = texto.lower()
+
+    match = re.search(r"\b([01]?\d|2[0-3])[:h]([0-5]\d)\b", texto_lower)
+    if match:
+        return f"{int(match.group(1)):02d}:{match.group(2)}"
+
+    match = re.search(r"\b([01]?\d|2[0-3])h\b", texto_lower)
+    if match:
+        return f"{int(match.group(1)):02d}:00"
+
+    match = re.search(r"\bàs?\s*([01]?\d|2[0-3])\b", texto_lower)
+    if match:
+        return f"{int(match.group(1)):02d}:00"
+
+    return None
+
+
 def processar_mensagem(texto):
     texto = (texto or "").strip()
-    texto_lower = texto.lower()
 
     if not texto:
         return "Não recebi nenhuma mensagem."
 
-    if texto_lower in ["ajuda", "/ajuda", "menu"]:
+    intencao = classificar_intencao(texto)
+    tipo = intencao.get("tipo")
+    codigo = intencao.get("codigo")
+    horario = intencao.get("horario") or extrair_horario(texto)
+
+    print("INTENÇÃO:", intencao)
+
+    if tipo == "ajuda":
         return comando_ajuda()
 
-    if texto_lower == "/status" or texto_lower in ["online", "online?", "status"]:
+    if tipo == "status":
         return "Status: online.\nSeatalk: conectado.\nGemini: conectado.\nGoogle Sheets: conectado."
 
-    if texto_lower in ["/relatorio", "relatorio", "relatório"]:
+    if tipo == "relatorio_farol":
         return gerar_relatorio_farol()
 
-    if texto_lower.startswith("/buscar"):
-        codigo = texto.replace("/buscar", "").strip()
+    if tipo == "producao_farol":
+        pergunta = texto
+        if horario:
+            pergunta += f"\nHorário solicitado: {horario}"
+        return consultar_producao_farol(pergunta)
+
+    if tipo == "busca_codigo":
         if not codigo:
-            return "Informe o código. Exemplo: /buscar 12345"
-        return buscar_codigo(texto, codigo)
+            codigo = extrair_codigo(texto)
 
-    palavras_farol = [
-        "farol",
-        "esteira",
-        "produção",
-        "produziu",
-        "produzido",
-        "produtividade",
-        "planilha",
-        "até agora",
-        "momento"
-    ]
+        if not codigo:
+            return "Me envie o código, pedido, LH ou tracking que você quer consultar."
 
-    if any(p in texto_lower for p in palavras_farol):
-        return consultar_producao_farol(texto)
-
-    codigo = extrair_codigo(texto)
-
-    if codigo:
         return buscar_codigo(texto, codigo)
 
     return perguntar_gemini(texto)
