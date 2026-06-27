@@ -7,7 +7,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "🛡️ Atalaia v2 Online"
+    return "🛡️ Atalaia v3 Online com Groq + Google Sheets"
 
 
 @app.route("/webhook", methods=["POST"])
@@ -42,5 +42,5 @@ def webhook():
 
 
 if __name__ == "__main__":
-    print("🛡️ Atalaia v2 iniciando...")
+    print("🛡️ Atalaia v3 iniciando...")
     app.run(host="0.0.0.0", port=5000)
