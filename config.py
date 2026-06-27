@@ -9,7 +9,9 @@ BASE_URL = "https://openapi.seatalk.io"
 
 PLANILHAS = {
     "farol": {
-        "id": "1LhUnFClJo_KfKFKHSzNBOawJ3KOT0s-CKd8pRAyR2o",
-        "abas": ["Histórico de Entregas"]
+        "id": "1LhUnFfCldo_KtKFKHSzNBOawJ3KOT0s-CKd8pRAyR2o",
+        "abas": [
+            "Histórico de Entregas"
+        ]
     }
 }
