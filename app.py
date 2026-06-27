@@ -1,18 +1,20 @@
 import os
 import requests
 from flask import Flask, request, jsonify
+from openai import OpenAI
 
 app = Flask(__name__)
 
 APP_ID = os.getenv("APP_ID")
 APP_SECRET = os.getenv("APP_SECRET")
-
 BASE_URL = "https://openapi.seatalk.io"
+
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 @app.route("/")
 def home():
-    return "🛡️ Atalaia Online"
+    return "🛡️ Atalaia Online com IA"
 
 
 def get_access_token():
@@ -30,11 +32,30 @@ def get_access_token():
 
     try:
         data = response.json()
+        return data.get("app_access_token")
     except Exception as e:
-        print("ERRO AO LER JSON DO TOKEN:", e)
+        print("ERRO TOKEN:", e)
         return None
 
-    return data.get("app_access_token")
+
+def gerar_resposta_ia(texto):
+    try:
+        response = client.responses.create(
+            model="gpt-5.5",
+            instructions="""
+Você é o Atalaia, assistente interno de logística da Shopee.
+Responda em português do Brasil.
+Seja direto, útil e profissional.
+Quando não souber algo, diga que precisa consultar a base ou sistema.
+""",
+            input=texto
+        )
+
+        return response.output_text
+
+    except Exception as e:
+        print("ERRO IA:", e)
+        return "🛡️ Atalaia Online\n\nTive um erro ao gerar a resposta com IA."
 
 
 def send_private_message(employee_code, text):
@@ -75,13 +96,21 @@ def webhook():
 
     if data.get("event_type") == "event_verification":
         challenge = data.get("event", {}).get("seatalk_challenge")
-
         if challenge:
             return challenge, 200
 
+    if data.get("event_type") == "user_enter_chatroom_with_bot":
+        event = data.get("event", {})
+        employee_code = event.get("employee_code")
+
+        if employee_code:
+            send_private_message(
+                employee_code,
+                "🛡️ Atalaia Online\n\nOlá! Estou online. Pode me mandar uma mensagem."
+            )
+
     if data.get("event_type") == "message_from_bot_subscriber":
         event = data.get("event", {})
-
         employee_code = event.get("employee_code")
 
         texto = (
@@ -90,12 +119,10 @@ def webhook():
             .get("content", "")
         )
 
-        resposta = f"🛡️ Atalaia Online\n\nRecebi sua mensagem: {texto}"
-
-        if employee_code:
+        if employee_code and texto:
+            resposta_ia = gerar_resposta_ia(texto)
+            resposta = f"🛡️ Atalaia Online\n\n{resposta_ia}"
             send_private_message(employee_code, resposta)
-        else:
-            print("ERRO: employee_code não encontrado no evento")
 
     return jsonify({"status": "ok"}), 200
 
