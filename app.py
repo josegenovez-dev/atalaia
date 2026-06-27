@@ -34,18 +34,10 @@ def get_access_token():
         print("ERRO AO LER JSON DO TOKEN:", e)
         return None
 
-    token = (
-        data.get("app_access_token")
-        or data.get("access_token")
-        or data.get("token")
-        or data.get("data", {}).get("app_access_token")
-        or data.get("data", {}).get("access_token")
-    )
-
-    return token
+    return data.get("app_access_token")
 
 
-def send_private_message(seatalk_id, text):
+def send_private_message(employee_code, text):
     token = get_access_token()
 
     if not token:
@@ -60,7 +52,7 @@ def send_private_message(seatalk_id, text):
     }
 
     payload = {
-        "seatalk_id": seatalk_id,
+        "employee_code": str(employee_code),
         "message": {
             "tag": "text",
             "text": {
@@ -89,7 +81,8 @@ def webhook():
 
     if data.get("event_type") == "message_from_bot_subscriber":
         event = data.get("event", {})
-        seatalk_id = event.get("seatalk_id")
+
+        employee_code = event.get("employee_code")
 
         texto = (
             event.get("message", {})
@@ -99,7 +92,10 @@ def webhook():
 
         resposta = f"🛡️ Atalaia Online\n\nRecebi sua mensagem: {texto}"
 
-        send_private_message(seatalk_id, resposta)
+        if employee_code:
+            send_private_message(employee_code, resposta)
+        else:
+            print("ERRO: employee_code não encontrado no evento")
 
     return jsonify({"status": "ok"}), 200
 
