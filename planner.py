@@ -12,16 +12,18 @@ def comando_ajuda():
 /ajuda
 /relatorio
 /buscar CÓDIGO
+/farol
 
-Você também pode perguntar:
+Perguntas naturais:
+- Consultar planilha de Farol
 - Ver quanto a esteira produziu até agora
-- Consulta o pedido 12345
 - Gerar relatório da Farol
 """
 
 
 def extrair_codigo(texto):
-    match = re.search(r"[A-Za-z0-9\-]{5,}", texto)
+    # Só considera código se tiver número
+    match = re.search(r"\b[A-Za-z0-9\-]*\d[A-Za-z0-9\-]{3,}\b", texto)
     return match.group(0) if match else None
 
 
@@ -35,7 +37,7 @@ def processar_mensagem(texto):
     if texto_lower in ["ajuda", "/ajuda", "menu"]:
         return comando_ajuda()
 
-    if texto_lower == "/status":
+    if texto_lower == "/status" or texto_lower in ["online", "online?", "status"]:
         return "Status: online.\nSeatalk: conectado.\nGemini: conectado.\nGoogle Sheets: conectado."
 
     if texto_lower in ["/relatorio", "relatorio", "relatório"]:
@@ -47,17 +49,19 @@ def processar_mensagem(texto):
             return "Informe o código. Exemplo: /buscar 12345"
         return buscar_codigo(texto, codigo)
 
-    palavras_producao = [
+    palavras_farol = [
+        "farol",
+        "esteira",
         "produção",
         "produziu",
         "produzido",
-        "esteira",
-        "farol",
+        "produtividade",
+        "planilha",
         "até agora",
         "momento"
     ]
 
-    if any(p in texto_lower for p in palavras_producao):
+    if any(p in texto_lower for p in palavras_farol):
         return consultar_producao_farol(texto)
 
     codigo = extrair_codigo(texto)
