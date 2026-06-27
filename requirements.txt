@@ -1,6 +1,6 @@
 flask
 requests
 gunicorn
-google-genai
 gspread
 google-auth
+openai
