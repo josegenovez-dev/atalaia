@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import requests
 from flask import Flask, request, jsonify
 from google import genai
@@ -15,45 +16,25 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
 
 BASE_URL = "https://openapi.seatalk.io"
 
-
 PLANILHAS = {
-    "stageout": {
-        "id": "COLE_AQUI_O_ID_DA_PLANILHA_STAGEOUT",
-        "abas": ["Base", "Resumo"]
-    },
-    "abs": {
-        "id": "COLE_AQUI_O_ID_DA_PLANILHA_ABS",
-        "abas": ["ABS", "Hoje"]
-    },
-    "labor": {
-        "id": "COLE_AQUI_O_ID_DA_PLANILHA_LABOR",
-        "abas": ["Labor", "HC"]
-    },
-    "inventario": {
-        "id": "COLE_AQUI_O_ID_DA_PLANILHA_INVENTARIO",
-        "abas": ["Inventário", "Base"]
+    "historico": {
+        "id": "COLE_AQUI_O_ID_DA_PLANILHA",
+        "abas": ["Histórico de Entregas"]
     }
 }
 
 
 @app.route("/")
 def home():
-    return "🛡️ Atalaia Online com Gemini + Google Sheets"
+    return "🛡️ Atalaia Online com Sheets"
 
 
 def get_access_token():
     response = requests.post(
         f"{BASE_URL}/auth/app_access_token",
-        json={
-            "app_id": APP_ID,
-            "app_secret": APP_SECRET
-        },
+        json={"app_id": APP_ID, "app_secret": APP_SECRET},
         timeout=20
     )
-
-    print("TOKEN RESPONSE:", response.status_code)
-    print("TOKEN BODY:", response.text)
-
     data = response.json()
     return data.get("app_access_token")
 
@@ -61,22 +42,18 @@ def get_access_token():
 def send_private_message(employee_code, text):
     try:
         token = get_access_token()
-
         if not token:
-            print("ERRO: token não gerado")
             return
 
         payload = {
             "employee_code": str(employee_code),
             "message": {
                 "tag": "text",
-                "text": {
-                    "content": text[:3900]
-                }
+                "text": {"content": text[:3900]}
             }
         }
 
-        response = requests.post(
+        requests.post(
             f"{BASE_URL}/messaging/v2/single_chat",
             headers={
                 "Authorization": f"Bearer {token}",
@@ -86,94 +63,83 @@ def send_private_message(employee_code, text):
             timeout=20
         )
 
-        print("SEND RESPONSE:", response.status_code)
-        print("SEND BODY:", response.text)
-
     except Exception as e:
         print("ERRO AO ENVIAR:", repr(e))
 
 
 def get_sheets_client():
     if not GOOGLE_SERVICE_ACCOUNT_JSON:
-        raise Exception("GOOGLE_SERVICE_ACCOUNT_JSON não configurado no Render")
+        raise Exception("GOOGLE_SERVICE_ACCOUNT_JSON não configurado")
 
     info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
 
-    scopes = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
-
     credentials = Credentials.from_service_account_info(
         info,
-        scopes=scopes
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
     )
 
     return gspread.authorize(credentials)
 
 
-def ler_aba(nome_planilha, nome_aba):
+def ler_aba(planilha_id, aba):
     gc = get_sheets_client()
-
-    config = PLANILHAS.get(nome_planilha)
-
-    if not config:
-        return []
-
-    sheet = gc.open_by_key(config["id"])
-    worksheet = sheet.worksheet(nome_aba)
-
+    sheet = gc.open_by_key(planilha_id)
+    worksheet = sheet.worksheet(aba)
     return worksheet.get_all_records()
 
 
-def buscar_codigo_em_tudo(codigo):
+def buscar_em_planilhas(codigo):
     resultados = []
+    codigo = str(codigo).strip().lower()
 
-    for nome_planilha, config in PLANILHAS.items():
+    for nome, config in PLANILHAS.items():
         if "COLE_AQUI" in config["id"]:
             continue
 
         for aba in config["abas"]:
             try:
-                linhas = ler_aba(nome_planilha, aba)
+                linhas = ler_aba(config["id"], aba)
 
-                for i, linha in enumerate(linhas, start=2):
-                    valores = [str(v).lower() for v in linha.values()]
+                for numero_linha, linha in enumerate(linhas, start=2):
+                    texto_linha = " ".join(str(v).lower() for v in linha.values())
 
-                    if codigo.lower() in " ".join(valores):
+                    if codigo in texto_linha:
                         resultados.append({
-                            "planilha": nome_planilha,
+                            "planilha": nome,
                             "aba": aba,
-                            "linha": i,
+                            "linha": numero_linha,
                             "dados": linha
                         })
 
             except Exception as e:
-                print(f"ERRO lendo {nome_planilha}/{aba}:", repr(e))
+                print(f"Erro lendo {nome}/{aba}:", repr(e))
 
     return resultados
 
 
-def gerar_resposta_ia(texto, contexto=""):
-    try:
-        if not GEMINI_API_KEY:
-            return "GEMINI_API_KEY não configurada no Render."
+def extrair_codigo(texto):
+    match = re.search(r"[A-Za-z0-9\-]{5,}", texto)
+    return match.group(0) if match else None
 
+
+def gerar_resposta_ia(pergunta, contexto):
+    try:
         client = genai.Client(api_key=GEMINI_API_KEY)
 
         prompt = f"""
 Você é o Atalaia, assistente interno de logística.
+Responda em português do Brasil, de forma direta.
 
-Responda em português do Brasil.
-Seja direto, útil e profissional.
-Não invente dados operacionais.
-Use o contexto das planilhas quando existir.
+Pergunta do usuário:
+{pergunta}
 
-Contexto:
+Dados encontrados nas planilhas:
 {contexto}
 
-Mensagem do usuário:
-{texto}
+Explique o resultado sem inventar informações.
 """
 
         response = client.models.generate_content(
@@ -185,92 +151,37 @@ Mensagem do usuário:
 
     except Exception as e:
         print("ERRO GEMINI:", repr(e))
-        return f"Tive erro ao consultar a IA Gemini: {e}"
+        return f"Encontrei dados, mas tive erro ao organizar a resposta: {e}"
+
+
+def consultar_codigo(texto):
+    codigo = extrair_codigo(texto)
+
+    if not codigo:
+        return "Me envie um código, pedido, LH ou rastreio para eu buscar."
+
+    resultados = buscar_em_planilhas(codigo)
+
+    if not resultados:
+        return f"Não encontrei nada para: {codigo}"
+
+    contexto = json.dumps(resultados[:5], ensure_ascii=False, indent=2)
+
+    return gerar_resposta_ia(texto, contexto)
 
 
 def comando_ajuda():
     return """Comandos disponíveis:
 
-/ajuda
-/status
-/lh CÓDIGO
 /buscar CÓDIGO
-/abs
-/labor
-/stageout
-/inventario
-/relatorio"""
+/lh CÓDIGO
+/pedido CÓDIGO
+/status
+/ajuda
 
-
-def consultar_codigo(texto):
-    partes = texto.split(maxsplit=1)
-
-    if len(partes) < 2:
-        return "Informe o código. Exemplo: /lh BR123456789"
-
-    codigo = partes[1].strip()
-
-    resultados = buscar_codigo_em_tudo(codigo)
-
-    if not resultados:
-        return f"Não encontrei registros para: {codigo}"
-
-    resposta = f"Encontrei {len(resultados)} resultado(s) para {codigo}:\n\n"
-
-    for item in resultados[:5]:
-        resposta += f"Planilha: {item['planilha']}\n"
-        resposta += f"Aba: {item['aba']}\n"
-        resposta += f"Linha: {item['linha']}\n"
-        resposta += f"Dados: {item['dados']}\n\n"
-
-    return resposta
-
-
-def resumo_aba(nome_planilha):
-    config = PLANILHAS.get(nome_planilha)
-
-    if not config:
-        return "Planilha não cadastrada."
-
-    if "COLE_AQUI" in config["id"]:
-        return f"A planilha {nome_planilha} ainda não tem ID configurado."
-
-    contexto = ""
-
-    for aba in config["abas"]:
-        try:
-            linhas = ler_aba(nome_planilha, aba)
-            contexto += f"\nAba {aba}: {linhas[:20]}\n"
-        except Exception as e:
-            contexto += f"\nErro lendo aba {aba}: {e}\n"
-
-    return gerar_resposta_ia(
-        f"Faça um resumo operacional da planilha {nome_planilha}.",
-        contexto
-    )
-
-
-def gerar_relatorio():
-    contexto = ""
-
-    for nome_planilha, config in PLANILHAS.items():
-        if "COLE_AQUI" in config["id"]:
-            continue
-
-        for aba in config["abas"]:
-            try:
-                linhas = ler_aba(nome_planilha, aba)
-                contexto += f"\nPlanilha {nome_planilha} / Aba {aba}: {linhas[:10]}\n"
-            except Exception as e:
-                contexto += f"\nErro lendo {nome_planilha}/{aba}: {e}\n"
-
-    if not contexto.strip():
-        return "Nenhuma planilha configurada ainda."
-
-    return gerar_resposta_ia(
-        "Gere um relatório executivo da operação com base nos dados das planilhas.",
-        contexto
-    )
+Também pode perguntar naturalmente:
+"onde está o pedido 12345?"
+"""
 
 
 def processar_mensagem(texto):
@@ -280,37 +191,24 @@ def processar_mensagem(texto):
     if not texto:
         return "Não recebi nenhuma mensagem."
 
-    if texto_lower in ["ajuda", "/ajuda", "menu"]:
+    if texto_lower in ["/ajuda", "ajuda", "menu"]:
         return comando_ajuda()
 
     if texto_lower == "/status":
-        return "Status: online.\nSeatalk: conectado.\nGemini: conectado.\nGoogle Sheets: configurado se GOOGLE_SERVICE_ACCOUNT_JSON estiver no Render."
+        return "Status: online.\nSeatalk: conectado.\nGemini: conectado.\nGoogle Sheets: conectado."
 
-    if texto_lower.startswith("/lh") or texto_lower.startswith("/buscar"):
+    if texto_lower.startswith(("/buscar", "/lh", "/pedido")):
         return consultar_codigo(texto)
 
-    if texto_lower == "/abs":
-        return resumo_aba("abs")
+    if re.search(r"[A-Za-z0-9\-]{5,}", texto):
+        return consultar_codigo(texto)
 
-    if texto_lower == "/labor":
-        return resumo_aba("labor")
-
-    if texto_lower == "/stageout":
-        return resumo_aba("stageout")
-
-    if texto_lower == "/inventario":
-        return resumo_aba("inventario")
-
-    if texto_lower == "/relatorio":
-        return gerar_relatorio()
-
-    return gerar_resposta_ia(texto)
+    return gerar_resposta_ia(texto, "Nenhuma consulta de planilha foi solicitada.")
 
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_json(silent=True) or {}
-
     print("Evento recebido:", data)
 
     if data.get("event_type") == "event_verification":
@@ -330,10 +228,7 @@ def webhook():
 
         if employee_code:
             resposta = processar_mensagem(texto)
-            send_private_message(
-                employee_code,
-                f"🛡️ Atalaia Online\n\n{resposta}"
-            )
+            send_private_message(employee_code, f"🛡️ Atalaia Online\n\n{resposta}")
 
     return jsonify({"status": "ok"}), 200
 
