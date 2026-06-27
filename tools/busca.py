@@ -1,6 +1,6 @@
 import json
 from sheets_service import buscar_texto_em_tudo
-from ai import perguntar_gemini
+from ai import perguntar_ia
 
 
 def buscar_codigo(pergunta, codigo):
@@ -15,4 +15,4 @@ def buscar_codigo(pergunta, codigo):
         indent=2
     )
 
-    return perguntar_gemini(pergunta, contexto)
+    return perguntar_ia(pergunta, contexto)
