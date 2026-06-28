@@ -35,7 +35,7 @@ def ler_aba(nome_planilha, nome_aba):
 
     linhas_formatadas = []
 
-    for i, linha in enumerate(valores[1:], start=2):
+    for i, linha in enumerate(valores, start=1):
         if not any(linha):
             continue
 
