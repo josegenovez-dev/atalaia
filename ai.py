@@ -1,30 +1,23 @@
-from openai import OpenAI
-from config import GROQ_API_KEY
-
-
-def perguntar_gemini(pergunta, contexto=""):
-    return perguntar_ia(pergunta, contexto)
+from google import genai
+from config import GEMINI_API_KEY
 
 
 def perguntar_ia(pergunta, contexto=""):
     try:
-        if not GROQ_API_KEY:
-            return "GROQ_API_KEY não configurada no Render."
+        if not GEMINI_API_KEY:
+            return "GEMINI_API_KEY não configurada no Render."
 
-        client = OpenAI(
-            api_key=GROQ_API_KEY,
-            base_url="https://api.groq.com/openai/v1"
-        )
+        client = genai.Client(api_key=GEMINI_API_KEY)
 
         prompt = f"""
-Você é o Atalaia, assistente interno de logística.
+Você é o Atalaia, assistente operacional de logística da Shopee.
 
 Regras:
 - Responda em português do Brasil.
 - Seja direto, útil e profissional.
-- Não invente dados.
-- Quando houver contexto, use somente os dados do contexto.
-- Se não houver dados suficientes, diga isso claramente.
+- Não invente números.
+- Quando houver contexto, use somente o contexto.
+- Se não houver informação suficiente, diga isso claramente.
 
 Contexto:
 {contexto}
@@ -33,16 +26,13 @@ Pergunta:
 {pergunta}
 """
 
-        response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2
+        resposta = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=prompt
         )
 
-        return response.choices[0].message.content
+        return resposta.text or "Não consegui gerar resposta."
 
     except Exception as e:
-        print("ERRO GROQ:", repr(e))
-        return f"Tive erro ao consultar a IA Groq: {e}"
+        print("ERRO GEMINI:", repr(e))
+        return f"Tive erro ao consultar a IA: {e}"
