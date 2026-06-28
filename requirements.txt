@@ -3,4 +3,4 @@ requests
 gunicorn
 gspread
 google-auth
-openai
+google-genai
