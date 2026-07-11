@@ -5,26 +5,17 @@ from sheets_service import ler_primeira_aba
 
 
 def preparar_contexto_farol(linhas):
-    """
-    Converte os dados da planilha em texto organizado para o Gemini.
-    Aceita lista de listas ou lista de dicionários.
-    """
-
     if not linhas:
         return ""
 
-    # Limita o volume enviado ao Gemini
-    linhas_limitadas = linhas[:120]
+    linhas_limitadas = linhas[:150]
 
-    try:
-        return json.dumps(
-            linhas_limitadas,
-            ensure_ascii=False,
-            indent=2,
-            default=str,
-        )
-    except Exception:
-        return str(linhas_limitadas)
+    return json.dumps(
+        linhas_limitadas,
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
 
 
 def consultar_farol(pergunta):
@@ -36,44 +27,41 @@ def consultar_farol(pergunta):
 
         linhas = ler_primeira_aba("farol")
 
-        print(
-            "TIPO DOS DADOS DO FAROL:",
-            type(linhas).__name__,
-            flush=True,
-        )
-
-        print(
-            "AMOSTRA DOS DADOS DO FAROL:",
-            repr(linhas[:3]) if isinstance(linhas, list) else repr(linhas),
-            flush=True,
-        )
-
         if not linhas:
             return (
                 "A planilha Farol está vazia "
                 "ou não retornou dados."
             )
 
-        contexto_formatado = preparar_contexto_farol(linhas)
+        print(
+            "AMOSTRA FAROL:",
+            repr(linhas[:3]),
+            flush=True,
+        )
+
+        contexto_formatado = preparar_contexto_farol(
+            linhas
+        )
 
         contexto = f"""
-Dados reais obtidos diretamente da primeira aba da planilha Farol:
+Dados reais obtidos diretamente da aba Farol da planilha
+Farol - SoC RJ2:
 
 {contexto_formatado}
 
 Orientações:
-- Use somente os dados acima.
+- Use somente os dados apresentados.
 - Não invente valores.
-- Identifique corretamente os cabeçalhos e suas respectivas linhas.
-- Caso os dados estejam em formato de lista, considere a primeira linha como cabeçalho.
+- As colunas estão identificadas como COLUNA_1, COLUNA_2 etc.
+- Algumas primeiras linhas podem conter títulos, horários ou cabeçalhos.
+- Identifique a estrutura usando o conteúdo das próprias células.
+- Quando um dado não estiver presente, diga claramente.
 """
 
-        resposta = perguntar_ia(
+        return perguntar_ia(
             pergunta=pergunta,
             contexto=contexto,
         )
-
-        return resposta
 
     except Exception as error:
         print(
@@ -93,19 +81,20 @@ def gerar_relatorio_farol():
         """
 Gere um relatório operacional resumido da aba Farol.
 
-Destaque, quando estiverem disponíveis:
+Destaque somente quando estiver disponível:
 - produção;
-- capacidade;
 - produtividade;
+- capacidade;
 - ASM;
 - Delta;
 - T1;
 - T2;
 - T3;
+- volumes;
 - desvios;
 - pontos de atenção.
 
-Não invente valores e deixe claro quando alguma informação
-não estiver presente nos dados.
+Não invente valores.
+Organize a resposta em tópicos curtos e objetivos.
 """.strip()
     )
