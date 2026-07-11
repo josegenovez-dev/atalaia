@@ -20,7 +20,8 @@ def get_access_token():
 
     if not APP_ID or not APP_SECRET:
         print(
-            "ERRO: APP_ID ou APP_SECRET não configurados.",
+            "ERRO: APP_ID ou APP_SECRET "
+            "não configurados.",
             flush=True,
         )
         return None
@@ -41,13 +42,12 @@ def get_access_token():
             flush=True,
         )
 
-        print(
-            "TOKEN BODY:",
-            response.text,
-            flush=True,
-        )
-
         if not response.ok:
+            print(
+                "TOKEN BODY:",
+                response.text,
+                flush=True,
+            )
             return None
 
         data = response.json()
@@ -58,10 +58,6 @@ def get_access_token():
         )
 
         if not token:
-            print(
-                "ERRO: SeaTalk não retornou token.",
-                flush=True,
-            )
             return None
 
         expire = (
@@ -88,17 +84,9 @@ def get_access_token():
 
         return token
 
-    except requests.RequestException as error:
+    except Exception as error:
         print(
             "ERRO AO GERAR TOKEN:",
-            repr(error),
-            flush=True,
-        )
-        return None
-
-    except ValueError as error:
-        print(
-            "ERRO AO LER TOKEN:",
             repr(error),
             flush=True,
         )
@@ -117,17 +105,6 @@ def send_private_message(employee_code, text):
         token = get_access_token()
 
         if not token:
-            print("ERRO: token não gerado.", flush=True)
-            return False
-
-        if not employee_code:
-            print("ERRO: employee_code vazio.", flush=True)
-            return False
-
-        mensagem = str(text or "").strip()
-
-        if not mensagem:
-            print("ERRO: mensagem privada vazia.", flush=True)
             return False
 
         payload = {
@@ -135,7 +112,7 @@ def send_private_message(employee_code, text):
             "message": {
                 "tag": "text",
                 "text": {
-                    "content": mensagem[:3900],
+                    "content": str(text)[:3900],
                 },
             },
         }
@@ -161,14 +138,6 @@ def send_private_message(employee_code, text):
 
         return 200 <= response.status_code < 300
 
-    except requests.RequestException as error:
-        print(
-            "ERRO HTTP AO ENVIAR PRIVADO:",
-            repr(error),
-            flush=True,
-        )
-        return False
-
     except Exception as error:
         print(
             "ERRO AO ENVIAR PRIVADO:",
@@ -183,17 +152,6 @@ def send_group_message(group_id, text):
         token = get_access_token()
 
         if not token:
-            print("ERRO: token não gerado.", flush=True)
-            return False
-
-        if not group_id:
-            print("ERRO: group_id vazio.", flush=True)
-            return False
-
-        mensagem = str(text or "").strip()
-
-        if not mensagem:
-            print("ERRO: mensagem de grupo vazia.", flush=True)
             return False
 
         payload = {
@@ -201,7 +159,7 @@ def send_group_message(group_id, text):
             "message": {
                 "tag": "text",
                 "text": {
-                    "content": mensagem[:3900],
+                    "content": str(text)[:3900],
                 },
             },
         }
@@ -211,18 +169,6 @@ def send_group_message(group_id, text):
             headers=criar_headers(token),
             json=payload,
             timeout=20,
-        )
-
-        print(
-            "SEND GROUP URL:",
-            f"{BASE_URL}/messaging/v2/group_chat",
-            flush=True,
-        )
-
-        print(
-            "SEND GROUP PAYLOAD:",
-            payload,
-            flush=True,
         )
 
         print(
@@ -238,14 +184,6 @@ def send_group_message(group_id, text):
         )
 
         return 200 <= response.status_code < 300
-
-    except requests.RequestException as error:
-        print(
-            "ERRO HTTP AO ENVIAR PARA GRUPO:",
-            repr(error),
-            flush=True,
-        )
-        return False
 
     except Exception as error:
         print(
