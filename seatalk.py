@@ -12,11 +12,11 @@ _token_cache = {
 def get_access_token():
     agora = time.time()
 
-    token_salvo = _token_cache["token"]
-    expires_at = _token_cache["expires_at"]
-
-    if token_salvo and agora < expires_at:
-        return token_salvo
+    if (
+        _token_cache["token"]
+        and agora < _token_cache["expires_at"]
+    ):
+        return _token_cache["token"]
 
     if not APP_ID or not APP_SECRET:
         print(
@@ -64,18 +64,22 @@ def get_access_token():
             )
             return None
 
-        expire = data.get("expire") or data.get("expires_in")
+        expire = data.get("expire") or data.get(
+            "expires_in"
+        )
 
         try:
             expire = int(expire)
         except (TypeError, ValueError):
             expire = 7200
 
-        # Alguns retornos podem trazer timestamp absoluto.
         if expire > agora:
             expires_at = expire - 120
         else:
-            expires_at = agora + max(expire - 120, 60)
+            expires_at = agora + max(
+                expire - 120,
+                60,
+            )
 
         _token_cache["token"] = token
         _token_cache["expires_at"] = expires_at
@@ -92,7 +96,7 @@ def get_access_token():
 
     except ValueError as error:
         print(
-            "ERRO AO LER RESPOSTA DO TOKEN:",
+            "ERRO AO LER TOKEN:",
             repr(error),
             flush=True,
         )
