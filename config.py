@@ -17,14 +17,15 @@ GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
 
 PLANILHAS_RAW = os.getenv(
     "PLANILHAS",
-    "[]",
+    "{}",
 )
 
 try:
     PLANILHAS = json.loads(PLANILHAS_RAW)
-except json.JSONDecodeError:
-    PLANILHAS = [
-        item.strip()
-        for item in PLANILHAS_RAW.split(",")
-        if item.strip()
-    ]
+except json.JSONDecodeError as error:
+    print(
+        "ERRO AO LER PLANILHAS:",
+        repr(error),
+        flush=True,
+    )
+    PLANILHAS = {}
