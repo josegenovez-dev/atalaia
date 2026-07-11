@@ -1,230 +1,73 @@
 import os
-import time
-import requests
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify, request
+
+from seatalk import send_private_message
 
 app = Flask(__name__)
 
-APP_ID = os.getenv("APP_ID")
-APP_SECRET = os.getenv("APP_SECRET")
-
-BASE_URL = "https://openapi.seatalk.io"
-
 BOT_NAME = os.getenv("BOT_NAME", "Atalaia")
-BOT_SEATALK_ID = os.getenv("BOT_SEATALK_ID", "9324018901")
+PORT = int(os.getenv("PORT", "5000"))
 
-PORT = int(os.getenv("PORT", "5050"))
+EVENTOS_PRIVADOS = {
+    "message_from_bot_subscriber",
+    "new_message_received_from_bot_subscriber",
+    "new_message_received_from_bot_subscriber_v2",
+    "message_received",
+    "single_chat_message_received",
+}
 
-_token_cache = {
-    "token": None,
-    "expires_at": 0,
+EVENTOS_GRUPO = {
+    "new_mentioned_message_received_from_group_chat",
+    "mentioned_message_from_group_chat",
+    "message_from_group_chat",
+    "group_chat_message_received",
+}
+
+EVENTOS_SEM_RESPOSTA = {
+    "user_enter_chatroom_with_bot",
+    "bot_subscriber_added",
+    "url_verification",
 }
 
 
-def get_access_token():
-    agora = time.time()
-
-    if (
-        _token_cache["token"]
-        and agora < _token_cache["expires_at"]
-    ):
-        return _token_cache["token"]
-
-    if not APP_ID or not APP_SECRET:
-        raise RuntimeError(
-            "APP_ID ou APP_SECRET não configurados nas variáveis de ambiente."
-        )
-
-    url = f"{BASE_URL}/auth/app_access_token"
-
-    payload = {
-        "app_id": APP_ID,
-        "app_secret": APP_SECRET,
-    }
-
-    response = requests.post(
-        url,
-        json=payload,
-        timeout=15,
-    )
-
-    print(
-        "TOKEN STATUS:",
-        response.status_code,
-        response.text,
-        flush=True,
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    token = (
-        data.get("app_access_token")
-        or data.get("access_token")
-    )
-
-    if not token:
-        raise RuntimeError(
-            f"SeaTalk não retornou um access token: {data}"
-        )
-
-    expires_in = int(data.get("expire", data.get("expires_in", 7000)))
-
-    _token_cache["token"] = token
-    _token_cache["expires_at"] = agora + max(expires_in - 120, 60)
-
-    return token
-
-
-def get_headers():
-    token = get_access_token()
-
-    return {
-        "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-    }
-
-
-def send_message_to_private(seatalk_id, text):
-    if not seatalk_id:
-        print("ERRO: seatalk_id privado vazio.", flush=True)
-        return None
-
-    url = (
-        f"{BASE_URL}/messaging/v2/"
-        f"single_chat/{seatalk_id}/message"
-    )
-
-    payload = {
-        "tag": "text",
-        "text": {
-            "content": text,
-        },
-    }
-
-    try:
-        response = requests.post(
-            url,
-            headers=get_headers(),
-            json=payload,
-            timeout=15,
-        )
-
-        print(
-            "SEND PRIVATE STATUS:",
-            response.status_code,
-            response.text,
-            flush=True,
-        )
-
-        return response
-
-    except Exception as error:
-        print(
-            "ERRO AO ENVIAR MENSAGEM PRIVADA:",
-            repr(error),
-            flush=True,
-        )
-        return None
-
-
-def send_message_to_group(group_id, text):
-    if not group_id:
-        print("ERRO: group_id vazio.", flush=True)
-        return None
-
-    headers = get_headers()
-
-    tentativas = [
-        {
-            "url": f"{BASE_URL}/messaging/v2/group_chat/message",
-            "payload": {
-                "group_id": group_id,
-                "message": {
-                    "tag": "text",
-                    "text": {
-                        "content": text,
-                    },
-                },
-            },
-        },
-        {
-            "url": (
-                f"{BASE_URL}/messaging/v2/"
-                f"group_chat/{group_id}/message"
-            ),
-            "payload": {
-                "tag": "text",
-                "text": {
-                    "content": text,
-                },
-            },
-        },
-    ]
-
-    ultimo_response = None
-
-    for tentativa in tentativas:
-        try:
-            response = requests.post(
-                tentativa["url"],
-                headers=headers,
-                json=tentativa["payload"],
-                timeout=15,
-            )
-
-            ultimo_response = response
-
-            print(
-                "SEND GROUP URL:",
-                tentativa["url"],
-                flush=True,
-            )
-
-            print(
-                "SEND GROUP STATUS:",
-                response.status_code,
-                response.text,
-                flush=True,
-            )
-
-            if 200 <= response.status_code < 300:
-                return response
-
-        except Exception as error:
-            print(
-                "ERRO AO ENVIAR MENSAGEM NO GRUPO:",
-                repr(error),
-                flush=True,
-            )
-
-    return ultimo_response
-
-
 def extrair_texto(evento):
+    """
+    Extrai o conteúdo textual da mensagem recebida do SeaTalk.
+    """
+
     message = evento.get("message") or {}
     text = message.get("text") or {}
 
-    texto = (
-        text.get("plain_text")
-        or text.get("content")
-        or message.get("plain_text")
+    conteudo = (
+        text.get("content")
+        or text.get("plain_text")
         or message.get("content")
+        or message.get("plain_text")
         or ""
     )
 
-    return str(texto).strip()
+    return str(conteudo).strip()
+
+
+def extrair_employee_code(evento):
+    """
+    O endpoint de envio privado do SeaTalk utiliza employee_code.
+    """
+
+    sender = evento.get("sender") or {}
+
+    return (
+        evento.get("employee_code")
+        or sender.get("employee_code")
+    )
 
 
 def extrair_seatalk_id(evento):
     sender = evento.get("sender") or {}
 
     return (
-        sender.get("seatalk_id")
-        or sender.get("employee_id")
-        or evento.get("seatalk_id")
-        or evento.get("subscriber_id")
+        evento.get("seatalk_id")
+        or sender.get("seatalk_id")
     )
 
 
@@ -233,60 +76,21 @@ def extrair_group_id(evento):
         evento.get("group_id")
         or evento.get("chat_id")
         or evento.get("chatroom_id")
+        or evento.get("thread_id")
     )
 
 
-def foi_mencionado(evento):
-    message = evento.get("message") or {}
-    text = message.get("text") or {}
+def limpar_mencao(texto):
+    texto = str(texto or "").strip()
 
-    mentioned_list = (
-        text.get("mentioned_list")
-        or message.get("mentioned_list")
-        or []
-    )
+    texto = texto.replace(f"@{BOT_NAME}", "")
+    texto = texto.replace(BOT_NAME, "")
 
-    for mention in mentioned_list:
-        mention_id = str(
-            mention.get("seatalk_id", "")
-        ).strip()
-
-        username = str(
-            mention.get("username", "")
-        ).strip().lower()
-
-        if mention_id and mention_id == str(BOT_SEATALK_ID):
-            return True
-
-        if username and username == BOT_NAME.lower():
-            return True
-
-    texto = extrair_texto(evento).lower()
-
-    return (
-        f"@{BOT_NAME.lower()}" in texto
-        or BOT_NAME.lower() in texto
-    )
-
-
-def limpar_texto(texto):
-    texto_limpo = str(texto or "")
-
-    texto_limpo = texto_limpo.replace(
-        f"@{BOT_NAME}",
-        "",
-    )
-
-    texto_limpo = texto_limpo.replace(
-        BOT_NAME,
-        "",
-    )
-
-    return texto_limpo.strip()
+    return texto.strip()
 
 
 def gerar_resposta(texto):
-    texto_limpo = limpar_texto(texto)
+    texto_limpo = limpar_mencao(texto)
     texto_lower = texto_limpo.lower()
 
     if not texto_limpo:
@@ -301,7 +105,14 @@ def gerar_resposta(texto):
     if "boa noite" in texto_lower:
         return "Boa noite! Atalaia ativo e na escuta 🛡️"
 
-    if texto_lower in {"oi", "olá", "ola", "e aí", "eai"}:
+    if texto_lower in {
+        "oi",
+        "olá",
+        "ola",
+        "e aí",
+        "eai",
+        "fala",
+    }:
         return "Olá! Atalaia online 🛡️"
 
     if "status" in texto_lower:
@@ -312,7 +123,7 @@ def gerar_resposta(texto):
 
 @app.route("/", methods=["GET"])
 def home():
-    return "🤖 SPX API Online — Atalaia ativo", 200
+    return "🤖 Atalaia online", 200
 
 
 @app.route("/health", methods=["GET"])
@@ -321,7 +132,6 @@ def health():
         {
             "ok": True,
             "service": "Atalaia",
-            "port": PORT,
         }
     ), 200
 
@@ -332,141 +142,102 @@ def webhook():
         return jsonify(
             {
                 "ok": True,
-                "message": "Webhook Atalaia online",
+                "message": "Webhook do Atalaia online",
             }
         ), 200
 
-    data = request.get_json(
-        silent=True,
-    ) or {}
+    data = request.get_json(silent=True) or {}
 
-    print(
-        "\n========== EVENTO RECEBIDO ==========",
-        flush=True,
-    )
+    print("\n========== EVENTO RECEBIDO ==========", flush=True)
     print(data, flush=True)
-    print(
-        "=====================================\n",
-        flush=True,
-    )
+    print("=====================================\n", flush=True)
 
-    event_type = str(
-        data.get("event_type", "")
-    ).strip()
-
+    event_type = str(data.get("event_type") or "").strip()
     evento = data.get("event") or {}
 
-    eventos_sem_resposta = {
-        "user_enter_chatroom_with_bot",
-        "bot_subscriber_added",
-        "url_verification",
-    }
+    if not event_type:
+        print("Evento recebido sem event_type.", flush=True)
 
-    if event_type in eventos_sem_resposta:
+        return jsonify(
+            {
+                "ok": False,
+                "error": "event_type ausente",
+            }
+        ), 200
+
+    if event_type in EVENTOS_SEM_RESPOSTA:
+        print(
+            f"Evento informativo recebido: {event_type}",
+            flush=True,
+        )
+
         return jsonify({"ok": True}), 200
 
-    eventos_privados = {
-        "message_from_bot_subscriber",
-        "new_message_received_from_bot_subscriber",
-        "new_message_received_from_bot_subscriber_v2",
-        "message_received",
-        "single_chat_message_received",
-    }
-
-    eventos_grupo = {
-        "new_mentioned_message_received_from_group_chat",
-        "mentioned_message_from_group_chat",
-        "message_from_group_chat",
-        "group_chat_message_received",
-    }
-
-    if event_type in eventos_privados:
+    if event_type in EVENTOS_PRIVADOS:
+        employee_code = extrair_employee_code(evento)
         seatalk_id = extrair_seatalk_id(evento)
         texto = extrair_texto(evento)
 
         print("TIPO: PRIVADO", flush=True)
+        print("EMPLOYEE CODE:", employee_code, flush=True)
         print("SEATALK ID:", seatalk_id, flush=True)
         print("TEXTO:", texto, flush=True)
 
-        if not seatalk_id:
+        if not employee_code:
             print(
-                "Não foi possível localizar o seatalk_id.",
+                "Employee code não encontrado no evento.",
                 flush=True,
             )
+
             return jsonify(
                 {
                     "ok": False,
-                    "error": "seatalk_id não encontrado",
+                    "error": "employee_code não encontrado",
                 }
             ), 200
 
         if not texto:
-            print(
-                "Mensagem privada sem texto.",
-                flush=True,
-            )
+            print("Mensagem privada sem texto.", flush=True)
+
             return jsonify({"ok": True}), 200
 
         resposta = gerar_resposta(texto)
 
-        resultado = send_message_to_private(
-            seatalk_id,
-            resposta,
+        resultado = send_private_message(
+            employee_code=employee_code,
+            text=resposta,
         )
 
         return jsonify(
             {
-                "ok": resultado is not None,
+                "ok": bool(resultado),
                 "type": "private",
             }
         ), 200
 
-    if event_type in eventos_grupo:
+    if event_type in EVENTOS_GRUPO:
         group_id = extrair_group_id(evento)
         texto = extrair_texto(evento)
-        mencionado = foi_mencionado(evento)
 
         print("TIPO: GRUPO", flush=True)
         print("GROUP ID:", group_id, flush=True)
         print("TEXTO:", texto, flush=True)
-        print("FOI MENCIONADO:", mencionado, flush=True)
 
-        if not group_id:
-            print(
-                "Não foi possível localizar o group_id.",
-                flush=True,
-            )
-            return jsonify(
-                {
-                    "ok": False,
-                    "error": "group_id não encontrado",
-                }
-            ), 200
-
-        if not mencionado:
-            print(
-                "Mensagem do grupo ignorada porque "
-                "o Atalaia não foi mencionado.",
-                flush=True,
-            )
-            return jsonify({"ok": True}), 200
-
-        resposta = gerar_resposta(texto)
-
-        resultado = send_message_to_group(
-            group_id,
-            resposta,
-        )
+        # Por enquanto apenas registramos o evento.
+        # O envio para grupo será conectado depois que o SeaTalk
+        # realmente entregar o evento e mostrar o group_id correto.
 
         return jsonify(
             {
-                "ok": resultado is not None,
+                "ok": True,
                 "type": "group",
+                "group_id": group_id,
+                "message_received": bool(texto),
             }
         ), 200
 
     print(
-        "EVENTO AINDA NÃO MAPEADO:",
+        "EVENTO NÃO MAPEADO:",
         event_type,
         flush=True,
     )
