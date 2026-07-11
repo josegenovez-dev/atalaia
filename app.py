@@ -1,6 +1,7 @@
 import os
 from flask import Flask, jsonify, request
 
+from ai import perguntar_ia
 from seatalk import send_private_message
 
 app = Flask(__name__)
@@ -23,7 +24,7 @@ EVENTOS_GRUPO = {
     "group_chat_message_received",
 }
 
-EVENTOS_SEM_RESPOSTA = {
+EVENTOS_INFORMATIVOS = {
     "user_enter_chatroom_with_bot",
     "bot_subscriber_added",
     "url_verification",
@@ -31,10 +32,6 @@ EVENTOS_SEM_RESPOSTA = {
 
 
 def extrair_texto(evento):
-    """
-    Extrai o conteúdo textual da mensagem recebida do SeaTalk.
-    """
-
     message = evento.get("message") or {}
     text = message.get("text") or {}
 
@@ -50,10 +47,6 @@ def extrair_texto(evento):
 
 
 def extrair_employee_code(evento):
-    """
-    O endpoint de envio privado do SeaTalk utiliza employee_code.
-    """
-
     sender = evento.get("sender") or {}
 
     return (
@@ -81,44 +74,33 @@ def extrair_group_id(evento):
 
 
 def limpar_mencao(texto):
-    texto = str(texto or "").strip()
+    texto_limpo = str(texto or "").strip()
 
-    texto = texto.replace(f"@{BOT_NAME}", "")
-    texto = texto.replace(BOT_NAME, "")
+    texto_limpo = texto_limpo.replace(
+        f"@{BOT_NAME}",
+        "",
+    )
 
-    return texto.strip()
+    texto_limpo = texto_limpo.replace(
+        BOT_NAME,
+        "",
+    )
+
+    return texto_limpo.strip()
 
 
-def gerar_resposta(texto):
-    texto_limpo = limpar_mencao(texto)
-    texto_lower = texto_limpo.lower()
+def gerar_resposta(texto, contexto=""):
+    pergunta = limpar_mencao(texto)
 
-    if not texto_limpo:
-        return "Fala comigo 👀"
+    if not pergunta:
+        return "Pode falar. Como posso ajudar?"
 
-    if "boa tarde" in texto_lower:
-        return "Boa tarde! Atalaia online e na escuta 🛡️"
+    resposta = perguntar_ia(
+        pergunta=pergunta,
+        contexto=contexto,
+    )
 
-    if "bom dia" in texto_lower:
-        return "Bom dia! Atalaia online e na escuta 🛡️"
-
-    if "boa noite" in texto_lower:
-        return "Boa noite! Atalaia ativo e na escuta 🛡️"
-
-    if texto_lower in {
-        "oi",
-        "olá",
-        "ola",
-        "e aí",
-        "eai",
-        "fala",
-    }:
-        return "Olá! Atalaia online 🛡️"
-
-    if "status" in texto_lower:
-        return "Atalaia online e funcionando normalmente 🟢"
-
-    return f"Recebi sua mensagem: {texto_limpo}"
+    return resposta
 
 
 @app.route("/", methods=["GET"])
@@ -132,6 +114,7 @@ def health():
         {
             "ok": True,
             "service": "Atalaia",
+            "gemini": True,
         }
     ), 200
 
@@ -148,15 +131,27 @@ def webhook():
 
     data = request.get_json(silent=True) or {}
 
-    print("\n========== EVENTO RECEBIDO ==========", flush=True)
+    print(
+        "\n========== EVENTO RECEBIDO ==========",
+        flush=True,
+    )
     print(data, flush=True)
-    print("=====================================\n", flush=True)
+    print(
+        "=====================================\n",
+        flush=True,
+    )
 
-    event_type = str(data.get("event_type") or "").strip()
+    event_type = str(
+        data.get("event_type") or ""
+    ).strip()
+
     evento = data.get("event") or {}
 
     if not event_type:
-        print("Evento recebido sem event_type.", flush=True)
+        print(
+            "Evento recebido sem event_type.",
+            flush=True,
+        )
 
         return jsonify(
             {
@@ -165,9 +160,10 @@ def webhook():
             }
         ), 200
 
-    if event_type in EVENTOS_SEM_RESPOSTA:
+    if event_type in EVENTOS_INFORMATIVOS:
         print(
-            f"Evento informativo recebido: {event_type}",
+            "EVENTO INFORMATIVO:",
+            event_type,
             flush=True,
         )
 
@@ -179,13 +175,21 @@ def webhook():
         texto = extrair_texto(evento)
 
         print("TIPO: PRIVADO", flush=True)
-        print("EMPLOYEE CODE:", employee_code, flush=True)
-        print("SEATALK ID:", seatalk_id, flush=True)
+        print(
+            "EMPLOYEE CODE:",
+            employee_code,
+            flush=True,
+        )
+        print(
+            "SEATALK ID:",
+            seatalk_id,
+            flush=True,
+        )
         print("TEXTO:", texto, flush=True)
 
         if not employee_code:
             print(
-                "Employee code não encontrado no evento.",
+                "Employee code não encontrado.",
                 flush=True,
             )
 
@@ -197,20 +201,29 @@ def webhook():
             ), 200
 
         if not texto:
-            print("Mensagem privada sem texto.", flush=True)
+            print(
+                "Mensagem privada sem texto.",
+                flush=True,
+            )
 
             return jsonify({"ok": True}), 200
 
         resposta = gerar_resposta(texto)
 
-        resultado = send_private_message(
+        print(
+            "RESPOSTA GEMINI:",
+            resposta,
+            flush=True,
+        )
+
+        enviado = send_private_message(
             employee_code=employee_code,
             text=resposta,
         )
 
         return jsonify(
             {
-                "ok": bool(resultado),
+                "ok": enviado,
                 "type": "private",
             }
         ), 200
@@ -223,10 +236,18 @@ def webhook():
         print("GROUP ID:", group_id, flush=True)
         print("TEXTO:", texto, flush=True)
 
-        # Por enquanto apenas registramos o evento.
-        # O envio para grupo será conectado depois que o SeaTalk
-        # realmente entregar o evento e mostrar o group_id correto.
+        if texto:
+            resposta = gerar_resposta(texto)
 
+            print(
+                "RESPOSTA GEMINI PARA GRUPO:",
+                resposta,
+                flush=True,
+            )
+
+        # O evento do grupo será tratado para envio depois
+        # que o SeaTalk realmente entregar o identificador
+        # e o formato correto do evento.
         return jsonify(
             {
                 "ok": True,
@@ -251,7 +272,7 @@ def webhook():
 
 
 @app.errorhandler(Exception)
-def handle_exception(error):
+def tratar_erro(error):
     print(
         "ERRO INTERNO:",
         repr(error),
