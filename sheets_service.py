@@ -6,14 +6,36 @@ from google.oauth2.service_account import Credentials
 from config import GOOGLE_SERVICE_ACCOUNT_JSON, PLANILHAS
 
 
-def normalizar_planilhas():
-    """
-    Aceita PLANILHAS como dicionário ou lista e sempre devolve
-    um dicionário indexado pelo nome da planilha.
-    """
+def get_client():
+    if not GOOGLE_SERVICE_ACCOUNT_JSON:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON não configurado."
+        )
 
+    try:
+        info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON contém JSON inválido."
+        ) from error
+
+    credentials = Credentials.from_service_account_info(
+        info,
+        scopes=[
+            "https://www.googleapis.com/auth/spreadsheets.readonly",
+            "https://www.googleapis.com/auth/drive.readonly",
+        ],
+    )
+
+    return gspread.authorize(credentials)
+
+
+def normalizar_planilhas():
     if isinstance(PLANILHAS, dict):
-        return PLANILHAS
+        return {
+            str(nome).lower().strip(): configuracao
+            for nome, configuracao in PLANILHAS.items()
+        }
 
     if isinstance(PLANILHAS, list):
         resultado = {}
@@ -26,7 +48,6 @@ def normalizar_planilhas():
                 item.get("nome")
                 or item.get("name")
                 or item.get("chave")
-                or item.get("key")
             )
 
             if nome:
@@ -34,56 +55,27 @@ def normalizar_planilhas():
 
         return resultado
 
-    raise TypeError(
-        "A variável PLANILHAS precisa ser um dicionário ou uma lista."
-    )
-
-
-def get_client():
-    if not GOOGLE_SERVICE_ACCOUNT_JSON:
-        raise RuntimeError(
-            "GOOGLE_SERVICE_ACCOUNT_JSON não configurado."
-        )
-
-    try:
-        info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
-    except json.JSONDecodeError as error:
-        raise RuntimeError(
-            f"GOOGLE_SERVICE_ACCOUNT_JSON contém JSON inválido: {error}"
-        ) from error
-
-    credentials = Credentials.from_service_account_info(
-        info,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ],
-    )
-
-    return gspread.authorize(credentials)
+    return {}
 
 
 def obter_config_planilha(nome_planilha):
     planilhas = normalizar_planilhas()
     nome_normalizado = str(nome_planilha).lower().strip()
 
-    config = (
-        planilhas.get(nome_planilha)
-        or planilhas.get(nome_normalizado)
-    )
+    config = planilhas.get(nome_normalizado)
 
     if not config:
-        nomes_disponiveis = ", ".join(planilhas.keys())
+        disponiveis = ", ".join(planilhas.keys()) or "nenhuma"
 
         raise KeyError(
             f"Planilha '{nome_planilha}' não configurada. "
-            f"Disponíveis: {nomes_disponiveis or 'nenhuma'}."
+            f"Disponíveis: {disponiveis}."
         )
 
     if not isinstance(config, dict):
         raise TypeError(
-            f"A configuração da planilha '{nome_planilha}' "
-            "não é um dicionário."
+            f"A configuração de '{nome_planilha}' "
+            "precisa ser um objeto JSON."
         )
 
     if not config.get("id"):
@@ -95,18 +87,18 @@ def obter_config_planilha(nome_planilha):
 
 
 def obter_abas(config):
-    abas = config.get("abas") or config.get("aba") or []
+    abas = config.get("abas") or []
 
     if isinstance(abas, str):
         abas = [
-            item.strip()
-            for item in abas.split(",")
-            if item.strip()
+            aba.strip()
+            for aba in abas.split(",")
+            if aba.strip()
         ]
 
     if not isinstance(abas, list):
         raise TypeError(
-            "O campo 'abas' precisa ser uma lista ou texto."
+            "O campo 'abas' precisa ser uma lista."
         )
 
     return abas
@@ -114,25 +106,28 @@ def obter_abas(config):
 
 def ler_aba(nome_planilha, nome_aba):
     config = obter_config_planilha(nome_planilha)
-    gc = get_client()
+    cliente = get_client()
 
     print(
         "ABRINDO PLANILHA:",
         nome_planilha,
+        flush=True,
+    )
+    print(
+        "PLANILHA ID:",
         config["id"],
         flush=True,
     )
-
     print(
         "ABRINDO ABA:",
         nome_aba,
         flush=True,
     )
 
-    sheet = gc.open_by_key(config["id"])
-    worksheet = sheet.worksheet(nome_aba)
+    planilha = cliente.open_by_key(config["id"])
+    aba = planilha.worksheet(nome_aba)
 
-    valores = worksheet.get_all_values()
+    valores = aba.get_all_values()
 
     if not valores:
         return []
@@ -166,7 +161,8 @@ def ler_primeira_aba(nome_planilha):
 
     if not abas:
         raise ValueError(
-            f"A planilha '{nome_planilha}' não possui abas configuradas."
+            f"A planilha '{nome_planilha}' "
+            "não possui abas configuradas."
         )
 
     return ler_aba(
@@ -176,30 +172,22 @@ def ler_primeira_aba(nome_planilha):
 
 
 def buscar_texto_em_tudo(texto):
-    resultados = []
     texto_normalizado = str(texto or "").lower().strip()
 
     if not texto_normalizado:
-        return resultados
+        return []
 
+    resultados = []
     planilhas = normalizar_planilhas()
 
     for nome_planilha, config in planilhas.items():
         try:
             abas = obter_abas(config)
-        except Exception as error:
-            print(
-                f"Erro na configuração de {nome_planilha}:",
-                repr(error),
-                flush=True,
-            )
-            continue
 
-        for aba in abas:
-            try:
+            for nome_aba in abas:
                 linhas = ler_aba(
                     nome_planilha=nome_planilha,
-                    nome_aba=aba,
+                    nome_aba=nome_aba,
                 )
 
                 for linha in linhas:
@@ -212,17 +200,17 @@ def buscar_texto_em_tudo(texto):
                         resultados.append(
                             {
                                 "planilha": nome_planilha,
-                                "aba": aba,
+                                "aba": nome_aba,
                                 "linha": linha.get("_linha"),
                                 "dados": linha,
                             }
                         )
 
-            except Exception as error:
-                print(
-                    f"Erro lendo {nome_planilha}/{aba}:",
-                    repr(error),
-                    flush=True,
-                )
+        except Exception as error:
+            print(
+                f"ERRO LENDO {nome_planilha}:",
+                repr(error),
+                flush=True,
+            )
 
     return resultados
