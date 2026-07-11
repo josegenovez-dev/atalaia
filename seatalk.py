@@ -64,8 +64,10 @@ def get_access_token():
             )
             return None
 
-        expire = data.get("expire") or data.get(
-            "expires_in"
+        expire = (
+            data.get("expire")
+            or data.get("expires_in")
+            or 7200
         )
 
         try:
@@ -103,31 +105,29 @@ def get_access_token():
         return None
 
 
+def criar_headers(token):
+    return {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json",
+    }
+
+
 def send_private_message(employee_code, text):
     try:
         token = get_access_token()
 
         if not token:
-            print(
-                "ERRO: token não gerado.",
-                flush=True,
-            )
+            print("ERRO: token não gerado.", flush=True)
             return False
 
         if not employee_code:
-            print(
-                "ERRO: employee_code vazio.",
-                flush=True,
-            )
+            print("ERRO: employee_code vazio.", flush=True)
             return False
 
         mensagem = str(text or "").strip()
 
         if not mensagem:
-            print(
-                "ERRO: mensagem vazia.",
-                flush=True,
-            )
+            print("ERRO: mensagem privada vazia.", flush=True)
             return False
 
         payload = {
@@ -142,10 +142,7 @@ def send_private_message(employee_code, text):
 
         response = requests.post(
             f"{BASE_URL}/messaging/v2/single_chat",
-            headers={
-                "Authorization": f"Bearer {token}",
-                "Content-Type": "application/json",
-            },
+            headers=criar_headers(token),
             json=payload,
             timeout=20,
         )
@@ -166,7 +163,7 @@ def send_private_message(employee_code, text):
 
     except requests.RequestException as error:
         print(
-            "ERRO HTTP AO ENVIAR:",
+            "ERRO HTTP AO ENVIAR PRIVADO:",
             repr(error),
             flush=True,
         )
@@ -174,7 +171,85 @@ def send_private_message(employee_code, text):
 
     except Exception as error:
         print(
-            "ERRO AO ENVIAR:",
+            "ERRO AO ENVIAR PRIVADO:",
+            repr(error),
+            flush=True,
+        )
+        return False
+
+
+def send_group_message(group_id, text):
+    try:
+        token = get_access_token()
+
+        if not token:
+            print("ERRO: token não gerado.", flush=True)
+            return False
+
+        if not group_id:
+            print("ERRO: group_id vazio.", flush=True)
+            return False
+
+        mensagem = str(text or "").strip()
+
+        if not mensagem:
+            print("ERRO: mensagem de grupo vazia.", flush=True)
+            return False
+
+        payload = {
+            "group_id": str(group_id),
+            "message": {
+                "tag": "text",
+                "text": {
+                    "content": mensagem[:3900],
+                },
+            },
+        }
+
+        response = requests.post(
+            f"{BASE_URL}/messaging/v2/group_chat",
+            headers=criar_headers(token),
+            json=payload,
+            timeout=20,
+        )
+
+        print(
+            "SEND GROUP URL:",
+            f"{BASE_URL}/messaging/v2/group_chat",
+            flush=True,
+        )
+
+        print(
+            "SEND GROUP PAYLOAD:",
+            payload,
+            flush=True,
+        )
+
+        print(
+            "SEND GROUP RESPONSE:",
+            response.status_code,
+            flush=True,
+        )
+
+        print(
+            "SEND GROUP BODY:",
+            response.text,
+            flush=True,
+        )
+
+        return 200 <= response.status_code < 300
+
+    except requests.RequestException as error:
+        print(
+            "ERRO HTTP AO ENVIAR PARA GRUPO:",
+            repr(error),
+            flush=True,
+        )
+        return False
+
+    except Exception as error:
+        print(
+            "ERRO AO ENVIAR PARA GRUPO:",
             repr(error),
             flush=True,
         )
