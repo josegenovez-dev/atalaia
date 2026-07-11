@@ -1,8 +1,8 @@
 import os
 from flask import Flask, jsonify, request
 
-from ai import perguntar_ia
-from seatalk import send_private_message, send_group_message
+from planner import processar_mensagem
+from seatalk import send_group_message, send_private_message
 
 app = Flask(__name__)
 
@@ -88,16 +88,26 @@ def limpar_mencao(texto):
     return texto_limpo.strip()
 
 
-def gerar_resposta(texto, contexto=""):
+def processar_texto_recebido(texto):
     pergunta = limpar_mencao(texto)
 
     if not pergunta:
         return "Pode falar. Como posso ajudar?"
 
-    return perguntar_ia(
-        pergunta=pergunta,
-        contexto=contexto,
-    )
+    try:
+        return processar_mensagem(pergunta)
+
+    except Exception as error:
+        print(
+            "ERRO NO PLANNER:",
+            repr(error),
+            flush=True,
+        )
+
+        return (
+            "Tive um erro ao processar sua solicitação. "
+            "Tente novamente em instantes."
+        )
 
 
 @app.route("/", methods=["GET"])
@@ -111,9 +121,12 @@ def health():
         {
             "ok": True,
             "service": "Atalaia",
+            "seatalk": True,
             "gemini": True,
-            "private_chat": True,
+            "planner": True,
+            "spx": True,
             "group_chat": True,
+            "private_chat": True,
         }
     ), 200
 
@@ -147,8 +160,6 @@ def webhook():
     evento = data.get("event") or {}
 
     if not event_type:
-        print("Evento sem event_type.", flush=True)
-
         return jsonify(
             {
                 "ok": False,
@@ -186,10 +197,10 @@ def webhook():
         if not texto:
             return jsonify({"ok": True}), 200
 
-        resposta = gerar_resposta(texto)
+        resposta = processar_texto_recebido(texto)
 
         print(
-            "RESPOSTA GEMINI PRIVADO:",
+            "RESPOSTA PROCESSADA PRIVADO:",
             resposta,
             flush=True,
         )
@@ -225,10 +236,10 @@ def webhook():
         if not texto:
             return jsonify({"ok": True}), 200
 
-        resposta = gerar_resposta(texto)
+        resposta = processar_texto_recebido(texto)
 
         print(
-            "RESPOSTA GEMINI PARA GRUPO:",
+            "RESPOSTA PROCESSADA GRUPO:",
             resposta,
             flush=True,
         )
