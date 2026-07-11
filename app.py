@@ -1,4 +1,6 @@
 import os
+import time
+
 from flask import Flask, jsonify, request
 
 from planner import processar_mensagem
@@ -29,6 +31,31 @@ EVENTOS_INFORMATIVOS = {
     "bot_subscriber_added",
     "url_verification",
 }
+
+EVENTOS_PROCESSADOS = {}
+TTL_EVENTO = 600
+
+
+def evento_ja_processado(event_id):
+    agora = time.time()
+
+    eventos_expirados = [
+        chave
+        for chave, horario in EVENTOS_PROCESSADOS.items()
+        if agora - horario > TTL_EVENTO
+    ]
+
+    for chave in eventos_expirados:
+        EVENTOS_PROCESSADOS.pop(chave, None)
+
+    if not event_id:
+        return False
+
+    if event_id in EVENTOS_PROCESSADOS:
+        return True
+
+    EVENTOS_PROCESSADOS[event_id] = agora
+    return False
 
 
 def extrair_texto(evento):
@@ -95,7 +122,12 @@ def processar_texto_recebido(texto):
         return "Pode falar. Como posso ajudar?"
 
     try:
-        return processar_mensagem(pergunta)
+        resposta = processar_mensagem(pergunta)
+
+        if not resposta:
+            return "Não consegui gerar uma resposta agora."
+
+        return str(resposta).strip()
 
     except Exception as error:
         print(
@@ -122,11 +154,13 @@ def health():
             "ok": True,
             "service": "Atalaia",
             "seatalk": True,
-            "gemini": True,
             "planner": True,
+            "gemini": True,
+            "google_sheets": True,
             "spx": True,
-            "group_chat": True,
             "private_chat": True,
+            "group_chat": True,
+            "deduplicacao": True,
         }
     ), 200
 
@@ -153,6 +187,24 @@ def webhook():
         flush=True,
     )
 
+    event_id = str(
+        data.get("event_id") or ""
+    ).strip()
+
+    if evento_ja_processado(event_id):
+        print(
+            "EVENTO DUPLICADO IGNORADO:",
+            event_id,
+            flush=True,
+        )
+
+        return jsonify(
+            {
+                "ok": True,
+                "duplicate": True,
+            }
+        ), 200
+
     event_type = str(
         data.get("event_type") or ""
     ).strip()
@@ -160,6 +212,11 @@ def webhook():
     evento = data.get("event") or {}
 
     if not event_type:
+        print(
+            "Evento recebido sem event_type.",
+            flush=True,
+        )
+
         return jsonify(
             {
                 "ok": False,
@@ -182,11 +239,28 @@ def webhook():
         texto = extrair_texto(evento)
 
         print("TIPO: PRIVADO", flush=True)
-        print("EMPLOYEE CODE:", employee_code, flush=True)
-        print("SEATALK ID:", seatalk_id, flush=True)
-        print("TEXTO:", texto, flush=True)
+        print(
+            "EMPLOYEE CODE:",
+            employee_code,
+            flush=True,
+        )
+        print(
+            "SEATALK ID:",
+            seatalk_id,
+            flush=True,
+        )
+        print(
+            "TEXTO:",
+            texto,
+            flush=True,
+        )
 
         if not employee_code:
+            print(
+                "Employee code não encontrado.",
+                flush=True,
+            )
+
             return jsonify(
                 {
                     "ok": False,
@@ -195,6 +269,11 @@ def webhook():
             ), 200
 
         if not texto:
+            print(
+                "Mensagem privada sem texto.",
+                flush=True,
+            )
+
             return jsonify({"ok": True}), 200
 
         resposta = processar_texto_recebido(texto)
@@ -222,10 +301,23 @@ def webhook():
         texto = extrair_texto(evento)
 
         print("TIPO: GRUPO", flush=True)
-        print("GROUP ID:", group_id, flush=True)
-        print("TEXTO:", texto, flush=True)
+        print(
+            "GROUP ID:",
+            group_id,
+            flush=True,
+        )
+        print(
+            "TEXTO:",
+            texto,
+            flush=True,
+        )
 
         if not group_id:
+            print(
+                "Group ID não encontrado.",
+                flush=True,
+            )
+
             return jsonify(
                 {
                     "ok": False,
@@ -234,6 +326,11 @@ def webhook():
             ), 200
 
         if not texto:
+            print(
+                "Mensagem de grupo sem texto.",
+                flush=True,
+            )
+
             return jsonify({"ok": True}), 200
 
         resposta = processar_texto_recebido(texto)
