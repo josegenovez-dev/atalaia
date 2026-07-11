@@ -2,7 +2,7 @@ import os
 from flask import Flask, jsonify, request
 
 from ai import perguntar_ia
-from seatalk import send_private_message
+from seatalk import send_private_message, send_group_message
 
 app = Flask(__name__)
 
@@ -69,7 +69,6 @@ def extrair_group_id(evento):
         evento.get("group_id")
         or evento.get("chat_id")
         or evento.get("chatroom_id")
-        or evento.get("thread_id")
     )
 
 
@@ -95,12 +94,10 @@ def gerar_resposta(texto, contexto=""):
     if not pergunta:
         return "Pode falar. Como posso ajudar?"
 
-    resposta = perguntar_ia(
+    return perguntar_ia(
         pergunta=pergunta,
         contexto=contexto,
     )
-
-    return resposta
 
 
 @app.route("/", methods=["GET"])
@@ -115,6 +112,8 @@ def health():
             "ok": True,
             "service": "Atalaia",
             "gemini": True,
+            "private_chat": True,
+            "group_chat": True,
         }
     ), 200
 
@@ -148,10 +147,7 @@ def webhook():
     evento = data.get("event") or {}
 
     if not event_type:
-        print(
-            "Evento recebido sem event_type.",
-            flush=True,
-        )
+        print("Evento sem event_type.", flush=True)
 
         return jsonify(
             {
@@ -175,24 +171,11 @@ def webhook():
         texto = extrair_texto(evento)
 
         print("TIPO: PRIVADO", flush=True)
-        print(
-            "EMPLOYEE CODE:",
-            employee_code,
-            flush=True,
-        )
-        print(
-            "SEATALK ID:",
-            seatalk_id,
-            flush=True,
-        )
+        print("EMPLOYEE CODE:", employee_code, flush=True)
+        print("SEATALK ID:", seatalk_id, flush=True)
         print("TEXTO:", texto, flush=True)
 
         if not employee_code:
-            print(
-                "Employee code não encontrado.",
-                flush=True,
-            )
-
             return jsonify(
                 {
                     "ok": False,
@@ -201,17 +184,12 @@ def webhook():
             ), 200
 
         if not texto:
-            print(
-                "Mensagem privada sem texto.",
-                flush=True,
-            )
-
             return jsonify({"ok": True}), 200
 
         resposta = gerar_resposta(texto)
 
         print(
-            "RESPOSTA GEMINI:",
+            "RESPOSTA GEMINI PRIVADO:",
             resposta,
             flush=True,
         )
@@ -236,24 +214,35 @@ def webhook():
         print("GROUP ID:", group_id, flush=True)
         print("TEXTO:", texto, flush=True)
 
-        if texto:
-            resposta = gerar_resposta(texto)
+        if not group_id:
+            return jsonify(
+                {
+                    "ok": False,
+                    "error": "group_id não encontrado",
+                }
+            ), 200
 
-            print(
-                "RESPOSTA GEMINI PARA GRUPO:",
-                resposta,
-                flush=True,
-            )
+        if not texto:
+            return jsonify({"ok": True}), 200
 
-        # O evento do grupo será tratado para envio depois
-        # que o SeaTalk realmente entregar o identificador
-        # e o formato correto do evento.
+        resposta = gerar_resposta(texto)
+
+        print(
+            "RESPOSTA GEMINI PARA GRUPO:",
+            resposta,
+            flush=True,
+        )
+
+        enviado = send_group_message(
+            group_id=group_id,
+            text=resposta,
+        )
+
         return jsonify(
             {
-                "ok": True,
+                "ok": enviado,
                 "type": "group",
                 "group_id": group_id,
-                "message_received": bool(texto),
             }
         ), 200
 
