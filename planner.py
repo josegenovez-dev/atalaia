@@ -1,263 +1,179 @@
 import json
 import re
+import unicodedata
 
 from ai import perguntar_ia
-from tools.busca import buscar_codigo
-from tools.farol import consultar_farol, gerar_relatorio_farol
-from tools.spx import consultar_spx
+from sheets_service import ler_aba
 
 
-def comando_ajuda():
-    return """Pode perguntar normalmente:
+def normalizar_texto(texto):
+    texto = str(texto or "").strip().lower()
 
-- Quanto a ASM produziu?
-- Qual a produtividade da ASM?
-- Como está o Farol?
-- Consulte BR269457066877P
-- Onde está o pacote BR269457066877P?
-- Gere um relatório da operação
-
-Comandos:
-/status
-/ajuda
-/relatorio
-/buscar CÓDIGO
-"""
-
-
-def extrair_codigo(texto):
-    match = re.search(
-        r"\b[A-Za-z]{2}\d{8,}[A-Za-z0-9]*\b",
+    texto = unicodedata.normalize(
+        "NFD",
         texto,
     )
 
-    if match:
-        return match.group(0)
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if unicodedata.category(
+            caractere
+        ) != "Mn"
+    )
 
-    match = re.search(
-        r"\b[A-Za-z0-9\-]*\d[A-Za-z0-9\-]{5,}\b",
+    texto = re.sub(
+        r"\s+",
+        " ",
         texto,
     )
 
-    return match.group(0) if match else None
+    return texto.strip()
 
 
-def extrair_horario(texto):
-    texto_lower = texto.lower()
-
-    match = re.search(
-        r"\b([01]?\d|2[0-3])[:h]([0-5]\d)\b",
-        texto_lower,
+def usuario_pediu_resumo_operacao(
+    mensagem,
+):
+    texto = normalizar_texto(
+        mensagem
     )
 
-    if match:
-        return (
-            f"{int(match.group(1)):02d}:"
-            f"{match.group(2)}"
-        )
-
-    match = re.search(
-        r"\b([01]?\d|2[0-3])h\b",
-        texto_lower,
-    )
-
-    if match:
-        return f"{int(match.group(1)):02d}:00"
-
-    return None
-
-
-def classificar_intencao(texto):
-    texto_lower = texto.lower().strip()
-
-    if texto_lower in {
+    palavras_resumo = [
+        "resumo",
+        "resuma",
         "status",
-        "online",
-        "online?",
-        "/status",
-    }:
-        return {
-            "tipo": "status",
-            "codigo": None,
-            "horario": None,
-        }
+        "situacao",
+        "como esta",
+        "como ta",
+        "resultado",
+        "numeros",
+        "indicadores",
+    ]
 
-    if texto_lower in {
-        "ajuda",
-        "/ajuda",
-        "menu",
-    }:
-        return {
-            "tipo": "ajuda",
-            "codigo": None,
-            "horario": None,
-        }
+    palavras_operacao = [
+        "operacao",
+        "farol",
+        "processo",
+        "turno",
+        "dados",
+        "planilha",
+    ]
 
-    if texto_lower.startswith("/buscar "):
-        codigo = texto.split(maxsplit=1)[1].strip()
-
-        return {
-            "tipo": "spx",
-            "codigo": codigo,
-            "horario": None,
-        }
-
-    codigo = extrair_codigo(texto)
-
-    if codigo:
-        return {
-            "tipo": "spx",
-            "codigo": codigo,
-            "horario": None,
-        }
-
-    if any(
-        palavra in texto_lower
-        for palavra in [
-            "relatório",
-            "relatorio",
-            "resumo",
-        ]
-    ):
-        return {
-            "tipo": "relatorio_farol",
-            "codigo": None,
-            "horario": None,
-        }
-
-    if any(
-        palavra in texto_lower
-        for palavra in [
-            "farol",
-            "esteira",
-            "produção",
-            "produziu",
-            "produtividade",
-            "capacidade",
-            "volume",
-            "volumes",
-            "asm",
-            "delta",
-            "t1",
-            "t2",
-            "t3",
-        ]
-    ):
-        return {
-            "tipo": "farol",
-            "codigo": None,
-            "horario": extrair_horario(texto),
-        }
-
-    return {
-        "tipo": "conversa",
-        "codigo": None,
-        "horario": None,
-    }
-
-
-def responder_spx(pergunta, codigo):
-    print(
-        "CONSULTA SPX SOLICITADA:",
-        codigo,
-        flush=True,
+    possui_resumo = any(
+        palavra in texto
+        for palavra in palavras_resumo
     )
 
-    dados = consultar_spx(codigo)
+    possui_operacao = any(
+        palavra in texto
+        for palavra in palavras_operacao
+    )
 
-    if not isinstance(dados, dict):
+    return (
+        possui_resumo
+        and possui_operacao
+    )
+
+
+def limitar_registros(
+    registros,
+    limite=500,
+):
+    if len(registros) <= limite:
+        return registros
+
+    return registros[-limite:]
+
+
+def montar_contexto_farol(
+    registros,
+):
+    registros_limitados = limitar_registros(
+        registros
+    )
+
+    return json.dumps(
+        registros_limitados,
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+    )
+
+
+def gerar_resumo_farol(
+    pergunta,
+):
+    registros = ler_aba(
+        nome_planilha="farol",
+        nome_aba="Farol",
+    )
+
+    if not registros:
         return (
-            "A API SPX retornou uma resposta "
-            "em formato inesperado."
+            "A planilha Farol foi consultada, "
+            "mas não possui registros para resumir."
         )
 
-    if dados.get("erro"):
-        return (
-            "Erro ao consultar o SPX:\n\n"
-            f"{dados['erro']}"
-        )
+    contexto = montar_contexto_farol(
+        registros
+    )
 
-    contexto = f"""
-Dados reais consultados diretamente na API SPX.
+    instrucao = f"""
+A planilha Farol possui {len(registros)} registros.
 
-Código consultado:
-{codigo}
+Analise os dados e apresente um resumo operacional.
 
-Resposta da API:
-{json.dumps(dados, ensure_ascii=False, indent=2)}
-"""
+Destaque, quando estiver disponível:
+- total geral;
+- volumes por status;
+- pendências;
+- concluídos;
+- diferenças relevantes;
+- pontos de atenção;
+- informações mais recentes;
+- possíveis riscos operacionais.
+
+Pergunta do usuário:
+{pergunta}
+""".strip()
 
     return perguntar_ia(
-        pergunta=f"""
-O usuário perguntou:
-
-{pergunta}
-
-Explique de forma objetiva:
-- o status atual;
-- a última movimentação;
-- a localização, se existir;
-- datas e horários disponíveis;
-- o histórico mais relevante;
-- qualquer possível problema identificado.
-
-Não invente informações.
-Use somente os dados enviados no contexto.
-""",
+        pergunta=instrucao,
         contexto=contexto,
     )
 
 
-def processar_mensagem(texto):
-    texto = str(texto or "").strip()
+def processar_mensagem(
+    mensagem,
+):
+    texto = str(mensagem or "").strip()
 
     if not texto:
-        return "Não recebi nenhuma mensagem."
-
-    intencao = classificar_intencao(texto)
-
-    tipo = intencao.get("tipo")
-    codigo = intencao.get("codigo")
-    horario = intencao.get("horario")
-
-    print(
-        "INTENÇÃO:",
-        intencao,
-        flush=True,
-    )
-
-    if tipo == "ajuda":
-        return comando_ajuda()
-
-    if tipo == "status":
         return (
-            "Status: online.\n"
-            "SeaTalk: conectado.\n"
-            "Gemini: conectado.\n"
-            "Google Sheets: conectado.\n"
-            "SPX API: configurada."
+            "Não recebi nenhuma mensagem "
+            "para processar."
         )
 
-    if tipo == "spx":
-        return responder_spx(
-            pergunta=texto,
-            codigo=codigo,
-        )
-
-    if tipo == "relatorio_farol":
-        return gerar_relatorio_farol()
-
-    if tipo == "farol":
-        pergunta = texto
-
-        if horario:
-            pergunta += (
-                f"\nHorário solicitado: {horario}"
+    try:
+        if usuario_pediu_resumo_operacao(
+            texto
+        ):
+            return gerar_resumo_farol(
+                texto
             )
 
-        return consultar_farol(pergunta)
+        return perguntar_ia(
+            pergunta=texto
+        )
 
-    return perguntar_ia(
-        pergunta=texto,
-        contexto="",
-    )
+    except Exception as error:
+        print(
+            "ERRO NO PLANNER:",
+            repr(error),
+            flush=True,
+        )
+
+        return (
+            "Não consegui concluir a consulta agora.\n\n"
+            f"Erro: {error}"
+        )
